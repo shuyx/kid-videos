@@ -219,12 +219,19 @@
 <div id="page-manage">
   <div class="card">
     <h2>批量添加 YouTube Kids 视频</h2>
-    <p class="tip">把视频网址粘贴到下面，一行一个（支持 youtubekids.com、youtube.com/watch、youtu.be 短链）。网址后可跟 #标签 和 <code>::</code> 备注，如 <code>https://youtu.be/xxxx #动画 #英语 :: 螺丝侠讲杠杆原理</code>。点「添加」后自动解析并加入播放列表，下次打开还在。</p>
+    <p class="tip">把视频网址粘贴到下面，一行一个（支持 youtubekids.com、youtube.com/watch、youtu.be 短链）。网址后可跟 #标签 和 <code>::</code> 备注，如 <code>https://youtu.be/xxxx #动画 #英语 :: 螺丝侠讲杠杆原理</code>。点「添加」后自动同步到线上，所有设备都能看到。</p>
     <textarea id="url-input" placeholder="https://www.youtubekids.com/watch?v=xxxx&#10;https://www.youtube.com/watch?v=yyyy&#10;https://youtu.be/zzzz"></textarea>
     <br>
     <button class="btn" onclick="addVideos()">✅ 添加</button>
     <button class="btn secondary" onclick="document.getElementById('url-input').value=''">清空输入</button>
     <div id="add-result"></div>
+  </div>
+
+  <div class="card">
+    <h2>📤 导出本机手动添加的视频</h2>
+    <p class="tip">在这台设备上手动添加、但还没同步到线上的视频，导出为文本（自动复制到剪贴板），发给别人或贴回上面的输入框即可迁移。</p>
+    <button class="btn secondary" onclick="exportLocal()">📤 导出并复制</button>
+    <div id="export-result"></div>
   </div>
 
   <div class="card">
@@ -440,6 +447,54 @@ function extractId(url) {
 function thumbUrl(id) { return `https://i.ytimg.com/vi/${id}/mqdefault.jpg`; }
 function embedUrl(id) { return `https://www.youtube.com/embed/${id}?rel=0`; }
 
+// ---------- 云同步（Cloudflare Worker → GitHub videos.txt） ----------
+const WORKER_URL = 'https://kid-video-add.kevinyuanxin.workers.dev';
+// 注意：这是公开页面的口令，作用只是防乱提交；Worker 端还有严格校验（只接受 YouTube 链接追加一行）
+const ADD_KEY = 's_amqdZBJNe46pYOEurC2c2zTrUKy8eA';
+
+// 把一行「网址 #标签 :: 备注」同步到线上仓库；返回 {ok, msg}
+async function syncToCloud(line) {
+  try {
+    const r = await fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Add-Key': ADD_KEY },
+      body: JSON.stringify({ line }),
+    });
+    const d = await r.json();
+    if (r.ok && (d.status === 'committed' || d.status === 'exists')) return { ok: true, msg: d.status };
+    return { ok: false, msg: d.error || ('HTTP ' + r.status) };
+  } catch (e) {
+    return { ok: false, msg: '网络失败：' + e.message };
+  }
+}
+
+// 组装规范行：网址 + 标签 + 备注
+function buildLine(id) {
+  let line = `https://www.youtube.com/watch?v=${id}`;
+  const tags = getTags(id);
+  if (tags.length) line += ' ' + tags.map(t => '#' + t).join(' ');
+  const note = getNote(id);
+  if (note) line += ' :: ' + note;
+  return line;
+}
+
+// 导出本机手动添加（不在 videos.txt 里）的视频
+function exportLocal() {
+  const locals = playlist.filter(v => !baseVideos.some(b => b.id === v.id));
+  const el = document.getElementById('export-result');
+  if (!locals.length) {
+    el.innerHTML = '<p class="fail">本机没有未同步的视频</p>';
+    return;
+  }
+  const text = locals.map(v => buildLine(v.id)).join('\n');
+  const done = ok => el.innerHTML =
+    `<p class="${ok ? 'ok' : 'fail'}">${ok ? '✓ 已复制到剪贴板' : '复制失败，请手动选择复制'}</p>` +
+    `<textarea style="min-height:100px;margin-top:8px" readonly>${escapeHtml(text)}</textarea>`;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => done(true), () => done(false));
+  } else done(false);
+}
+
 // ---------- 播放页 ----------
 let currentId = null;
 let filterTag = null;
@@ -511,6 +566,7 @@ async function addVideos() {
 
   result.innerHTML = '处理中…';
   let logs = [];
+  const toSync = [];
   for (const line of lines) {
     const parsed = parseVideoLine(line);
     if (!parsed) { logs.push(`<span class="fail">✗ 无法识别：${escapeHtml(line)}</span>`); continue; }
@@ -520,13 +576,25 @@ async function addVideos() {
     if (title) setCachedTitle(id, title);
     playlist.push({ id, title, note, addedAt: Date.now() });
     lineTags.forEach(t => { const s = getTagStore(); const e = s[id] || { add: [], del: [] }; if (!e.add.includes(t)) e.add.push(t); s[id] = e; saveTagStore(s); });
-    logs.push(`<span class="ok">✓ 已添加：${escapeHtml(title || id)}${lineTags.length ? '（标签：' + lineTags.map(escapeHtml).join('、') + '）' : ''}</span>`);
+    logs.push(`<span class="ok">✓ 已添加：${escapeHtml(title || id)}${lineTags.length ? '（标签：' + lineTags.map(escapeHtml).join('、') + '）' : ''} <span class="sync-mark" data-id="${id}">⏳ 同步中…</span></span>`);
+    toSync.push(buildLine(id));
   }
   save();
   renderList();
   renderManage();
   result.innerHTML = logs.join('\n');
   document.getElementById('url-input').value = '';
+
+  // 逐条同步到线上（Worker → GitHub videos.txt），约 1 分钟后全设备可见
+  for (const line of toSync) {
+    const id = extractId(line);
+    const r = await syncToCloud(line);
+    const mark = result.querySelector(`.sync-mark[data-id="${id}"]`);
+    if (mark) {
+      mark.textContent = r.ok ? '☁️ 已同步线上' : `⚠️ 同步失败（仅本机）：${r.msg}`;
+      mark.className = r.ok ? 'ok' : 'fail';
+    }
+  }
 }
 
 // 用 YouTube oEmbed 接口获取标题（失败就用 ID 代替，不影响播放）

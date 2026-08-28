@@ -1,0 +1,5 @@
+name = "kid-video-add"
+main = "worker.js"
+compatibility_date = "2026-08-28"
+workers_dev = true
+account_id = "840a027c334fa020601dad69a61af69e"
