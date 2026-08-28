@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>诗濛的视频乐园</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #ffeef8 0%, #e8f4ff 100%);
+    min-height: 100vh;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px;
+    background: rgba(255,255,255,.85);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 22px; color: #ff5fa2; }
+  nav button {
+    border: none; cursor: pointer; font-size: 15px;
+    padding: 8px 18px; border-radius: 20px; margin-left: 8px;
+    background: #eee; color: #555; transition: all .2s;
+  }
+  nav button.active { background: #ff5fa2; color: #fff; }
+  nav button:hover { transform: translateY(-1px); }
+
+  /* ---------- 播放页 ---------- */
+  #page-play {
+    display: flex; gap: 16px; padding: 16px 20px;
+    height: calc(100vh - 60px); /* 铺满窗口：高度跟随视口 */
+  }
+  .player-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .player-box {
+    position: relative; width: 100%; flex: 1; min-height: 0;
+    background: #000; border-radius: 16px; overflow: hidden;
+    box-shadow: 0 8px 30px rgba(0,0,0,.15);
+  }
+  .player-box iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .player-empty {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; color: #aaa;
+    background: #fff; border-radius: 16px; font-size: 18px; gap: 8px;
+  }
+  #now-title { margin-top: 12px; font-size: 18px; color: #333; font-weight: 600; }
+
+  .sidebar {
+    width: clamp(300px, 24vw, 460px); flex-shrink: 0;
+    background: rgba(255,255,255,.9); border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.08);
+    display: flex; flex-direction: column; height: 100%;
+  }
+  .sidebar h2 { padding: 14px 16px 8px; font-size: 16px; color: #ff5fa2; }
+  .video-list { overflow-y: auto; padding: 0 10px 10px; flex: 1; }
+  .video-item {
+    display: flex; gap: 10px; padding: 8px; border-radius: 12px;
+    cursor: pointer; transition: background .15s; align-items: center;
+  }
+  .video-item:hover { background: #fff0f6; }
+  .video-item.playing { background: #ffe3ef; outline: 2px solid #ff5fa2; }
+  .video-item img { width: 112px; height: 63px; border-radius: 8px; object-fit: cover; flex-shrink: 0; background: #eee; }
+  .video-item .v-title {
+    font-size: 13px; color: #333; line-height: 1.35;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .list-empty { text-align: center; color: #aaa; padding: 40px 10px; font-size: 14px; }
+
+  /* ---------- 管理页 ---------- */
+  #page-manage { display: none; max-width: 860px; margin: 0 auto; padding: 24px; }
+  .card {
+    background: rgba(255,255,255,.92); border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.08); padding: 22px; margin-bottom: 18px;
+  }
+  .card h2 { font-size: 17px; color: #ff5fa2; margin-bottom: 10px; }
+  .card p.tip { font-size: 13px; color: #888; margin-bottom: 10px; }
+  textarea {
+    width: 100%; min-height: 160px; resize: vertical;
+    border: 2px solid #ffd6e7; border-radius: 12px; padding: 12px;
+    font-size: 14px; font-family: inherit; outline: none;
+  }
+  textarea:focus { border-color: #ff5fa2; }
+  .btn {
+    border: none; cursor: pointer; font-size: 15px;
+    padding: 10px 26px; border-radius: 22px;
+    background: #ff5fa2; color: #fff; margin-top: 12px; transition: all .2s;
+  }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(255,95,162,.4); }
+  .btn.secondary { background: #8ecbff; }
+  .btn.danger { background: #ff7a7a; padding: 6px 14px; font-size: 13px; margin-top: 0; }
+  #add-result { margin-top: 12px; font-size: 14px; line-height: 1.8; white-space: pre-wrap; }
+  .ok { color: #2aad5f; } .fail { color: #e05555; }
+
+  .manage-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px; border-radius: 10px; border-bottom: 1px solid #f3f3f3;
+  }
+  .manage-item img { width: 96px; height: 54px; border-radius: 6px; object-fit: cover; background: #eee; }
+  .manage-item .v-title { flex: 1; font-size: 13px; color: #333; }
+  .manage-item .v-url { font-size: 11px; color: #aaa; word-break: break-all; }
+
+  /* ---------- 标签 ---------- */
+  .filter-bar {
+    display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 16px 10px;
+  }
+  .tag-chip {
+    display: inline-block; font-size: 11px; line-height: 1;
+    padding: 4px 10px; border-radius: 12px;
+    background: #e8f4ff; color: #3a7ec2; cursor: pointer;
+    border: 1px solid transparent; transition: all .15s; user-select: none;
+  }
+  .tag-chip:hover { border-color: #8ecbff; }
+  .tag-chip.active { background: #ff5fa2; color: #fff; }
+  .v-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .v-tags .tag-chip { font-size: 10px; padding: 3px 8px; }
+  .tag-editor { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 6px; }
+  .tag-editor .tag-chip { cursor: default; }
+  .tag-editor .tag-chip .del {
+    cursor: pointer; margin-left: 4px; color: #e05555; font-weight: bold;
+  }
+  .tag-input {
+    border: 1px dashed #ccc; border-radius: 12px; font-size: 11px;
+    padding: 3px 8px; width: 90px; outline: none; font-family: inherit;
+  }
+  .tag-input:focus { border-color: #ff5fa2; }
+
+  @media (max-width: 900px) {
+    #page-play { flex-direction: column; height: auto; }
+    .player-box { aspect-ratio: 16/9; flex: none; }
+    .sidebar { width: 100%; max-height: 50vh; }
+  }
+
+  /* ---------- 加标签弹窗 ---------- */
+  .modal-mask {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.35); align-items: center; justify-content: center;
+  }
+  .modal-mask.show { display: flex; }
+  .modal {
+    background: #fff; border-radius: 16px; padding: 22px 24px;
+    width: 340px; box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  }
+  .modal h3 { font-size: 16px; color: #ff5fa2; margin-bottom: 6px; }
+  .modal .m-title { font-size: 12px; color: #999; margin-bottom: 12px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .modal input {
+    width: 100%; border: 2px solid #ffd6e7; border-radius: 10px;
+    padding: 9px 12px; font-size: 14px; outline: none; font-family: inherit;
+  }
+  .modal input:focus { border-color: #ff5fa2; }
+  .modal .m-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0 2px; }
+  .modal .m-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .modal .m-btns .btn { margin-top: 0; padding: 8px 20px; font-size: 14px; }
+  .add-tag-btn {
+    border: 1px dashed #ffb8d4; background: #fff; color: #ff5fa2;
+    font-size: 10px; padding: 3px 8px; border-radius: 12px; cursor: pointer;
+    transition: all .15s;
+  }
+  .add-tag-btn:hover { background: #ff5fa2; color: #fff; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎈 诗濛的视频乐园</h1>
+  <nav>
+    <button id="tab-play" class="active" onclick="showPage('play')">▶ 看视频</button>
+    <button id="tab-manage" onclick="showPage('manage')">➕ 添加视频</button>
+  </nav>
+</header>
+
+<!-- 播放页 -->
+<div id="page-play">
+  <div class="player-wrap">
+    <div class="player-box" id="player-box">
+      <div class="player-empty" id="player-empty">
+        <div style="font-size:48px">📺</div>
+        <div>从右侧列表选一个视频开始看吧～</div>
+      </div>
+    </div>
+    <div id="now-title"></div>
+  </div>
+  <div class="sidebar">
+    <h2>📋 播放列表（点击切换）</h2>
+    <div class="filter-bar" id="filter-bar"></div>
+    <div class="video-list" id="video-list"></div>
+  </div>
+</div>
+
+<!-- 加标签弹窗 -->
+<div class="modal-mask" id="tag-modal" onclick="if(event.target===this) closeTagDialog()">
+  <div class="modal">
+    <h3>🏷️ 添加标签</h3>
+    <div class="m-title" id="tag-modal-title"></div>
+    <div class="m-tags" id="tag-modal-tags"></div>
+    <input id="tag-modal-input" placeholder="输入标签名，回车确认" onkeydown="if(event.key==='Enter') confirmTagDialog()">
+    <div class="m-btns">
+      <button class="btn secondary" onclick="closeTagDialog()">取消</button>
+      <button class="btn" onclick="confirmTagDialog()">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 管理页 -->
+<div id="page-manage">
+  <div class="card">
+    <h2>批量添加 YouTube Kids 视频</h2>
+    <p class="tip">把视频网址粘贴到下面，一行一个（支持 youtubekids.com、youtube.com/watch、youtu.be 短链）。网址后可以跟 #标签，如 <code>https://youtu.be/xxxx #动画 #英语</code>。点「添加」后自动解析并加入播放列表，下次打开还在。</p>
+    <textarea id="url-input" placeholder="https://www.youtubekids.com/watch?v=xxxx&#10;https://www.youtube.com/watch?v=yyyy&#10;https://youtu.be/zzzz"></textarea>
+    <br>
+    <button class="btn" onclick="addVideos()">✅ 添加</button>
+    <button class="btn secondary" onclick="document.getElementById('url-input').value=''">清空输入</button>
+    <div id="add-result"></div>
+  </div>
+
+  <div class="card">
+    <h2>已添加的视频（<span id="manage-count">0</span>）</h2>
+    <div id="manage-list"></div>
+  </div>
+</div>
+
+<script>
+const LS_KEY = 'kid-video-playlist';      // 管理页手动添加的视频
+const REMOVED_KEY = 'kid-video-removed';  // 被删除的 videos.txt 条目
+const TITLE_CACHE_KEY = 'kid-video-titles';
+const TAGS_KEY = 'kid-video-tags';        // 手动标签：{ id: { add: [...], del: [...] } }
+
+// videos.txt 是主数据源（GitHub Pages 上直接 fetch），格式：网址 [#标签1 #标签2 ...]
+// 下面这份是 file:// 双击打开时 fetch 失败用的兜底，内容应与 videos.txt 保持一致
+const FALLBACK_VIDEOS = [
+  { id: 'j3QQ5FpZ2Ys', title: 'The Fixies English - The Lever | Cartoons for Kids', tags: ['动画'] },
+  { id: 'QyoH9zOa19c', title: 'How to open a bottle cap “Easily” || How to use bottle opener || ASMR', tags: ['生活'] },
+];
+
+let baseVideos = FALLBACK_VIDEOS;
+let playlist = load();
+
+function getRemoved() {
+  try { return JSON.parse(localStorage.getItem(REMOVED_KEY)) || []; } catch(e) { return []; }
+}
+
+function load() {
+  const removed = getRemoved();
+  let custom = [];
+  try { custom = JSON.parse(localStorage.getItem(LS_KEY)) || []; } catch(e) {}
+  const base = baseVideos.filter(d => !removed.includes(d.id));
+  const seen = new Set(base.map(d => d.id));
+  return base.concat(custom.filter(c => !seen.has(c.id)));
+}
+function save() { localStorage.setItem(LS_KEY, JSON.stringify(playlist.filter(v => !baseVideos.some(d => d.id === v.id)))); }
+
+// 标题缓存，避免每次打开都调 oEmbed
+function getCachedTitle(id) {
+  try { return (JSON.parse(localStorage.getItem(TITLE_CACHE_KEY)) || {})[id] || null; } catch(e) { return null; }
+}
+function setCachedTitle(id, title) {
+  let cache = {};
+  try { cache = JSON.parse(localStorage.getItem(TITLE_CACHE_KEY)) || {}; } catch(e) {}
+  cache[id] = title;
+  localStorage.setItem(TITLE_CACHE_KEY, JSON.stringify(cache));
+}
+
+// 启动时拉取 videos.txt（每行：网址 [#标签 ...]），失败则用兜底列表
+async function initFromTxt() {
+  let text;
+  try {
+    const r = await fetch('videos.txt?t=' + Date.now());
+    if (!r.ok) return;
+    text = await r.text();
+  } catch(e) { return; }
+  const entries = [];
+  const seenIds = new Set();
+  for (const line of text.split('\n')) {
+    const tokens = line.trim().split(/\s+/).filter(Boolean);
+    const urlToken = tokens.find(t => !t.startsWith('#'));
+    const id = urlToken ? extractId(urlToken) : null;
+    if (!id || seenIds.has(id)) continue;
+    seenIds.add(id);
+    const tags = tokens.filter(t => t.startsWith('#')).map(t => t.slice(1)).filter(Boolean);
+    entries.push({ id, tags });
+  }
+  if (!entries.length) return;
+  baseVideos = await Promise.all(entries.map(async e => {
+    let title = getCachedTitle(e.id);
+    if (!title) {
+      title = await fetchTitle(e.id);
+      if (title) setCachedTitle(e.id, title);
+    }
+    return { id: e.id, title: title || e.id, tags: e.tags };
+  }));
+  playlist = load();
+  renderList();
+}
+initFromTxt();
+
+// ---------- 标签 ----------
+// 存储：手动增 { add: [] }，屏蔽 txt 里的标签 { del: [] }
+function getTagStore() {
+  try { return JSON.parse(localStorage.getItem(TAGS_KEY)) || {}; } catch(e) { return {}; }
+}
+function saveTagStore(store) { localStorage.setItem(TAGS_KEY, JSON.stringify(store)); }
+
+// 有效标签 = (videos.txt 标签 - del) + add
+function getTags(id) {
+  const store = getTagStore();
+  const entry = store[id] || { add: [], del: [] };
+  const base = baseVideos.find(v => v.id === id);
+  const txtTags = (base && base.tags) || [];
+  return [...new Set(txtTags.filter(t => !entry.del.includes(t)).concat(entry.add))];
+}
+
+function allTags() {
+  const s = new Set();
+  playlist.forEach(v => getTags(v.id).forEach(t => s.add(t)));
+  return [...s];
+}
+
+function addTag(id, tag) {
+  tag = tag.trim().replace(/^#/, '');
+  if (!tag) return;
+  const store = getTagStore();
+  const entry = store[id] || { add: [], del: [] };
+  entry.del = entry.del.filter(t => t !== tag);   // 恢复被屏蔽的 txt 标签
+  if (!getTags(id).includes(tag)) entry.add.push(tag);
+  store[id] = entry;
+  saveTagStore(store);
+  renderList();
+  renderManage();
+}
+
+function removeTag(id, tag) {
+  const store = getTagStore();
+  const entry = store[id] || { add: [], del: [] };
+  const base = baseVideos.find(v => v.id === id);
+  const isTxtTag = base && (base.tags || []).includes(tag);
+  if (isTxtTag) {
+    if (!entry.del.includes(tag)) entry.del.push(tag);
+  } else {
+    entry.add = entry.add.filter(t => t !== tag);
+  }
+  store[id] = entry;
+  saveTagStore(store);
+  if (filterTag === tag && !allTags().includes(tag)) filterTag = null;
+  renderList();
+  renderManage();
+}
+
+// ---------- 加标签弹窗 ----------
+let tagDialogId = null;
+
+function openTagDialog(id) {
+  tagDialogId = id;
+  const v = playlist.find(x => x.id === id);
+  document.getElementById('tag-modal-title').textContent = v ? (v.title || v.id) : id;
+  renderModalTags();
+  document.getElementById('tag-modal-input').value = '';
+  document.getElementById('tag-modal').classList.add('show');
+  setTimeout(() => document.getElementById('tag-modal-input').focus(), 50);
+}
+
+function renderModalTags() {
+  const tags = getTags(tagDialogId);
+  document.getElementById('tag-modal-tags').innerHTML = tags.map(t =>
+    `<span class="tag-chip">#${escapeHtml(t)}<span class="del" onclick="removeTag('${tagDialogId}', '${escapeHtml(t)}'); renderModalTags();">×</span></span>`
+  ).join('') || '<span style="font-size:12px;color:#bbb">还没有标签</span>';
+}
+
+function confirmTagDialog() {
+  const val = document.getElementById('tag-modal-input').value;
+  if (val.trim()) addTag(tagDialogId, val);
+  closeTagDialog();
+}
+
+function closeTagDialog() {
+  document.getElementById('tag-modal').classList.remove('show');
+  tagDialogId = null;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeTagDialog();
+});
+
+// 从各种 YouTube 网址提取 videoId
+function extractId(url) {
+  url = url.trim();
+  if (!url) return null;
+  const m = url.match(/[?&]v=([A-Za-z0-9_-]{11})/) ||
+            url.match(/youtu\.be\/([A-Za-z0-9_-]{11})/) ||
+            url.match(/\/(?:embed|shorts|live)\/([A-Za-z0-9_-]{11})/) ||
+            url.match(/^([A-Za-z0-9_-]{11})$/);
+  return m ? m[1] : null;
+}
+
+function thumbUrl(id) { return `https://i.ytimg.com/vi/${id}/mqdefault.jpg`; }
+function embedUrl(id) { return `https://www.youtube.com/embed/${id}?rel=0`; }
+
+// ---------- 播放页 ----------
+let currentId = null;
+let filterTag = null;
+
+function renderFilterBar() {
+  const el = document.getElementById('filter-bar');
+  const tags = allTags();
+  if (!tags.length) { el.innerHTML = ''; return; }
+  el.innerHTML =
+    `<span class="tag-chip ${filterTag === null ? 'active' : ''}" onclick="setFilter(null)">全部</span>` +
+    tags.map(t =>
+      `<span class="tag-chip ${filterTag === t ? 'active' : ''}" onclick="setFilter('${escapeHtml(t)}')">#${escapeHtml(t)}</span>`
+    ).join('');
+}
+
+function setFilter(tag) {
+  filterTag = tag;
+  renderList();
+}
+
+function renderList() {
+  renderFilterBar();
+  const el = document.getElementById('video-list');
+  if (!playlist.length) {
+    el.innerHTML = '<div class="list-empty">还没有视频<br>点右上角「➕ 添加视频」开始吧</div>';
+    return;
+  }
+  const shown = filterTag ? playlist.filter(v => getTags(v.id).includes(filterTag)) : playlist;
+  if (!shown.length) {
+    el.innerHTML = '<div class="list-empty">这个标签下没有视频</div>';
+    return;
+  }
+  el.innerHTML = shown.map(v => {
+    const tags = getTags(v.id);
+    return `
+    <div class="video-item ${v.id === currentId ? 'playing' : ''}" onclick="play('${v.id}')">
+      <img src="${thumbUrl(v.id)}" loading="lazy" alt="">
+      <div>
+        <div class="v-title">${escapeHtml(v.title || v.id)}</div>
+        <div class="v-tags">
+          ${tags.map(t =>
+            `<span class="tag-chip" onclick="event.stopPropagation(); setFilter('${escapeHtml(t)}')">#${escapeHtml(t)}</span>`).join('')}
+          <button class="add-tag-btn" onclick="event.stopPropagation(); openTagDialog('${v.id}')">🏷 +</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function play(id) {
+  const v = playlist.find(x => x.id === id);
+  if (!v) return;
+  currentId = id;
+  document.getElementById('player-box').innerHTML =
+    `<iframe src="${embedUrl(id)}" title="YouTube video player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
+  document.getElementById('now-title').textContent = v.title || '';
+  renderList();
+}
+
+// ---------- 管理页 ----------
+async function addVideos() {
+  const raw = document.getElementById('url-input').value;
+  const lines = raw.split('\n').map(s => s.trim()).filter(Boolean);
+  const result = document.getElementById('add-result');
+  if (!lines.length) { result.innerHTML = '<span class="fail">请先粘贴网址</span>'; return; }
+
+  result.innerHTML = '处理中…';
+  let logs = [];
+  for (const line of lines) {
+    const tokens = line.split(/\s+/).filter(Boolean);
+    const urlToken = tokens.find(t => !t.startsWith('#')) || '';
+    const lineTags = tokens.filter(t => t.startsWith('#')).map(t => t.slice(1)).filter(Boolean);
+    const id = extractId(urlToken);
+    if (!id) { logs.push(`<span class="fail">✗ 无法识别：${escapeHtml(line)}</span>`); continue; }
+    if (playlist.some(v => v.id === id)) { logs.push(`<span class="fail">✗ 已存在，跳过：${id}</span>`); continue; }
+    const title = await fetchTitle(id);
+    if (title) setCachedTitle(id, title);
+    playlist.push({ id, title, addedAt: Date.now() });
+    lineTags.forEach(t => { const s = getTagStore(); const e = s[id] || { add: [], del: [] }; if (!e.add.includes(t)) e.add.push(t); s[id] = e; saveTagStore(s); });
+    logs.push(`<span class="ok">✓ 已添加：${escapeHtml(title || id)}${lineTags.length ? '（标签：' + lineTags.map(escapeHtml).join('、') + '）' : ''}</span>`);
+  }
+  save();
+  renderList();
+  renderManage();
+  result.innerHTML = logs.join('\n');
+  document.getElementById('url-input').value = '';
+}
+
+// 用 YouTube oEmbed 接口获取标题（失败就用 ID 代替，不影响播放）
+function fetchTitle(id) {
+  return fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${id}&format=json`)
+    .then(r => r.ok ? r.json() : null)
+    .then(d => d ? d.title : null)
+    .catch(() => null);
+}
+
+function renderManage() {
+  document.getElementById('manage-count').textContent = playlist.length;
+  const el = document.getElementById('manage-list');
+  el.innerHTML = playlist.map(v => {
+    const tags = getTags(v.id);
+    return `
+    <div class="manage-item">
+      <img src="${thumbUrl(v.id)}" loading="lazy" alt="">
+      <div class="v-title">
+        ${escapeHtml(v.title || v.id)}
+        <div class="v-url">https://www.youtube.com/watch?v=${v.id}</div>
+        <div class="tag-editor">
+          ${tags.map(t => `<span class="tag-chip">#${escapeHtml(t)}<span class="del" onclick="removeTag('${v.id}', '${escapeHtml(t)}')">×</span></span>`).join('')}
+          <input class="tag-input" placeholder="+ 加标签" onkeydown="if(event.key==='Enter'){addTag('${v.id}', this.value); this.value='';}">
+        </div>
+      </div>
+      <button class="btn danger" onclick="removeVideo('${v.id}')">删除</button>
+    </div>`;
+  }).join('') || '<div class="list-empty">暂无视频</div>';
+}
+
+function removeVideo(id) {
+  // videos.txt 条目被删除时记入黑名单，下次打开不再恢复（想彻底删除请直接改 videos.txt）
+  if (baseVideos.some(d => d.id === id)) {
+    let removed = [];
+    try { removed = JSON.parse(localStorage.getItem(REMOVED_KEY)) || []; } catch(e) {}
+    if (!removed.includes(id)) removed.push(id);
+    localStorage.setItem(REMOVED_KEY, JSON.stringify(removed));
+  }
+  playlist = playlist.filter(v => v.id !== id);
+  save();
+  renderList();
+  renderManage();
+}
+
+// ---------- 通用 ----------
+function showPage(p) {
+  document.getElementById('page-play').style.display = p === 'play' ? 'flex' : 'none';
+  document.getElementById('page-manage').style.display = p === 'manage' ? 'block' : 'none';
+  document.getElementById('tab-play').classList.toggle('active', p === 'play');
+  document.getElementById('tab-manage').classList.toggle('active', p === 'manage');
+  if (p === 'manage') renderManage();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+renderList();
+</script>
+</body>
+</html>
